@@ -62,6 +62,23 @@ jobs:
           localhost
           EOF
           ansible-playbook -i ./hosts main.yml -e "db_host=$DB_HOST db_name=$DB_NAME db_user=$DB_USER db_pass=$DB_PASS" -c local
+      - name: Debug application status
+        if: always()
+        run: |
+          echo "=== Checking Apache status ==="
+          sudo systemctl status apache2 --no-pager || true
+          echo "=== Checking Apache error logs ==="
+          sudo tail -50 /var/log/apache2/laravel_error.log || true
+          echo "=== Checking Laravel logs ==="
+          sudo tail -50 /var/www/laravel-app/storage/logs/laravel.log || true
+          echo "=== Testing home page ==="
+          curl -I http://localhost/ || true
+          echo "=== Testing login page ==="
+          curl -v http://localhost/login || true
+          echo "=== Checking Laravel routes ==="
+          cd /var/www/laravel-app && sudo -u www-data php artisan route:list || true
+          echo "=== Checking .env file ==="
+          sudo cat /var/www/laravel-app/.env | grep -v "PASS\|KEY" || true
       - name: Test application
         uses: cypress-io/github-action@v6
         with:

@@ -151,6 +151,18 @@
   ansible.builtin.debug:
     var: migration_result
 
+- name: Verify migrations table exists
+  become: yes
+  become_user: www-data
+  ansible.builtin.shell: php artisan migrate:status
+  args:
+    chdir: /var/www/laravel-app
+  register: migrate_status
+
+- name: Display migration status
+  ansible.builtin.debug:
+    var: migrate_status.stdout_lines
+
 - name: Clear all Laravel caches after migration
   become: yes
   become_user: www-data
@@ -159,6 +171,15 @@
     php artisan cache:clear
     php artisan route:clear
     php artisan view:clear
+  args:
+    chdir: /var/www/laravel-app
+
+- name: Cache Laravel configuration and routes for better performance
+  become: yes
+  become_user: www-data
+  ansible.builtin.shell: |
+    php artisan config:cache
+    php artisan route:cache
   args:
     chdir: /var/www/laravel-app
 

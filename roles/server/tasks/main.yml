@@ -50,6 +50,18 @@
     group: www-data
     recurse: yes
 
+- name: Set permissions for storage and cache
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0775'
+    recurse: yes
+  loop:
+    - /var/www/laravel-app/storage
+    - /var/www/laravel-app/bootstrap/cache
+
 - name: Install Composer dependencies
   become: yes
   become_user: www-data
@@ -66,20 +78,26 @@
     group: www-data
     mode: '0644'
 
+- name: Check if APP_KEY is set in .env
+  ansible.builtin.shell: grep -q "^APP_KEY=base64:" /var/www/laravel-app/.env
+  register: app_key_check
+  failed_when: false
+  changed_when: false
+
 - name: Generate Laravel application key
   become: yes
   become_user: www-data
-  ansible.builtin.shell: php artisan key:generate
+  ansible.builtin.shell: php artisan key:generate --force
   args:
     chdir: /var/www/laravel-app
-    creates: /var/www/laravel-app/.env.generated
+  when: app_key_check.rc != 0
 
-- name: Create marker file for key generation
-  ansible.builtin.file:
-    path: /var/www/laravel-app/.env.generated
-    state: touch
-    owner: www-data
-    group: www-data
+- name: Clear Laravel configuration cache
+  become: yes
+  become_user: www-data
+  ansible.builtin.shell: php artisan config:clear
+  args:
+    chdir: /var/www/laravel-app
 
 - name: Run Laravel migrations
   become: yes
@@ -87,19 +105,20 @@
   ansible.builtin.shell: php artisan migrate --force
   args:
     chdir: /var/www/laravel-app
-  ignore_errors: yes
+  register: migration_result
+  failed_when: false
 
-- name: Set permissions for storage and cache
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    owner: www-data
-    group: www-data
-    mode: '0775'
-    recurse: yes
-  loop:
-    - /var/www/laravel-app/storage
-    - /var/www/laravel-app/bootstrap/cache
+- name: Display migration output
+  ansible.builtin.debug:
+    var: migration_result
+  when: migration_result.rc != 0
+
+- name: Optimize Laravel
+  become: yes
+  become_user: www-data
+  ansible.builtin.shell: php artisan optimize
+  args:
+    chdir: /var/www/laravel-app
 
 - name: Configure Apache virtual host
   ansible.builtin.template:

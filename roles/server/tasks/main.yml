@@ -1,0 +1,127 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install Apache and PHP packages
+  ansible.builtin.apt:
+    name:
+      - apache2
+      - php
+      - php-cli
+      - php-fpm
+      - php-pgsql
+      - php-mbstring
+      - php-xml
+      - php-curl
+      - php-zip
+      - php-bcmath
+      - php-json
+      - php-tokenizer
+      - libapache2-mod-php
+      - git
+      - unzip
+    state: present
+
+- name: Enable Apache rewrite module
+  community.general.apache2_module:
+    name: rewrite
+    state: present
+  notify: restart apache
+
+- name: Install Composer
+  ansible.builtin.shell: |
+    curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+  args:
+    creates: /usr/local/bin/composer
+
+- name: Clone Laravel application from GitHub
+  ansible.builtin.git:
+    repo: 'https://github.com/Practical-DevOps/app-for-devops.git'
+    dest: /var/www/laravel-app
+    version: main
+    force: yes
+
+- name: Set ownership of Laravel directory
+  ansible.builtin.file:
+    path: /var/www/laravel-app
+    owner: www-data
+    group: www-data
+    recurse: yes
+
+- name: Install Composer dependencies
+  become: yes
+  become_user: www-data
+  community.general.composer:
+    command: install
+    working_dir: /var/www/laravel-app
+    no_dev: no
+
+- name: Create .env file from template
+  ansible.builtin.template:
+    src: env.j2
+    dest: /var/www/laravel-app/.env
+    owner: www-data
+    group: www-data
+    mode: '0644'
+
+- name: Generate Laravel application key
+  become: yes
+  become_user: www-data
+  ansible.builtin.shell: php artisan key:generate
+  args:
+    chdir: /var/www/laravel-app
+    creates: /var/www/laravel-app/.env.generated
+
+- name: Create marker file for key generation
+  ansible.builtin.file:
+    path: /var/www/laravel-app/.env.generated
+    state: touch
+    owner: www-data
+    group: www-data
+
+- name: Run Laravel migrations
+  become: yes
+  become_user: www-data
+  ansible.builtin.shell: php artisan migrate --force
+  args:
+    chdir: /var/www/laravel-app
+  ignore_errors: yes
+
+- name: Set permissions for storage and cache
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0775'
+    recurse: yes
+  loop:
+    - /var/www/laravel-app/storage
+    - /var/www/laravel-app/bootstrap/cache
+
+- name: Configure Apache virtual host
+  ansible.builtin.template:
+    src: laravel-vhost.conf.j2
+    dest: /etc/apache2/sites-available/laravel.conf
+    mode: '0644'
+  notify: restart apache
+
+- name: Disable default Apache site
+  ansible.builtin.command: a2dissite 000-default.conf
+  args:
+    removes: /etc/apache2/sites-enabled/000-default.conf
+  notify: restart apache
+
+- name: Enable Laravel site
+  ansible.builtin.command: a2ensite laravel.conf
+  args:
+    creates: /etc/apache2/sites-enabled/laravel.conf
+  notify: restart apache
+
+- name: Ensure Apache is started and enabled
+  ansible.builtin.service:
+    name: apache2
+    state: started
+    enabled: yes

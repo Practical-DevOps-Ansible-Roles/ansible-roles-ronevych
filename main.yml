@@ -1,4 +1,5 @@
----- name: Configure PostgreSQL database server
+---
+- name: Configure PostgreSQL database server
   hosts: db
   become: yes
   vars:

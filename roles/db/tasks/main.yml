@@ -43,6 +43,52 @@
     type: database
     state: present
 
+- name: Grant privileges to user on public schema
+  become: yes
+  become_user: postgres
+  community.postgresql.postgresql_privs:
+    database: "{{ db_name }}"
+    roles: "{{ db_user }}"
+    objs: public
+    privs: ALL
+    type: schema
+    state: present
+
+- name: Grant create privilege on public schema
+  become: yes
+  become_user: postgres
+  community.postgresql.postgresql_privs:
+    database: "{{ db_name }}"
+    roles: "{{ db_user }}"
+    objs: public
+    privs: CREATE
+    type: schema
+    state: present
+
+- name: Set default privileges for tables
+  become: yes
+  become_user: postgres
+  community.postgresql.postgresql_privs:
+    database: "{{ db_name }}"
+    roles: "{{ db_user }}"
+    objs: ALL_IN_SCHEMA
+    privs: ALL
+    type: table
+    schema: public
+    state: present
+
+- name: Set default privileges for sequences
+  become: yes
+  become_user: postgres
+  community.postgresql.postgresql_privs:
+    database: "{{ db_name }}"
+    roles: "{{ db_user }}"
+    objs: ALL_IN_SCHEMA
+    privs: ALL
+    type: sequence
+    schema: public
+    state: present
+
 - name: Get PostgreSQL version
   ansible.builtin.shell: psql --version | grep -oP '\d+' | head -1
   register: pg_version

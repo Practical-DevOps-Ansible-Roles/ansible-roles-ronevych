@@ -62,6 +62,30 @@
     - /var/www/laravel-app/storage
     - /var/www/laravel-app/bootstrap/cache
 
+- name: Ensure session directory exists and is writable
+  ansible.builtin.file:
+    path: /var/www/laravel-app/storage/framework/sessions
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0775'
+
+- name: Ensure views directory exists and is writable
+  ansible.builtin.file:
+    path: /var/www/laravel-app/storage/framework/views
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0775'
+
+- name: Ensure cache directory exists and is writable
+  ansible.builtin.file:
+    path: /var/www/laravel-app/storage/framework/cache
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: '0775'
+
 - name: Install Composer dependencies
   become: yes
   become_user: www-data
@@ -99,6 +123,22 @@
   args:
     chdir: /var/www/laravel-app
 
+- name: Clear Laravel cache
+  become: yes
+  become_user: www-data
+  ansible.builtin.shell: php artisan cache:clear
+  args:
+    chdir: /var/www/laravel-app
+
+- name: Test database connection
+  become: yes
+  become_user: www-data
+  ansible.builtin.shell: php artisan db:show
+  args:
+    chdir: /var/www/laravel-app
+  register: db_test
+  failed_when: false
+
 - name: Run Laravel migrations
   become: yes
   become_user: www-data
@@ -106,17 +146,19 @@
   args:
     chdir: /var/www/laravel-app
   register: migration_result
-  failed_when: false
 
 - name: Display migration output
   ansible.builtin.debug:
     var: migration_result
-  when: migration_result.rc != 0
 
-- name: Optimize Laravel
+- name: Clear all Laravel caches after migration
   become: yes
   become_user: www-data
-  ansible.builtin.shell: php artisan optimize
+  ansible.builtin.shell: |
+    php artisan config:clear
+    php artisan cache:clear
+    php artisan route:clear
+    php artisan view:clear
   args:
     chdir: /var/www/laravel-app
 
@@ -144,3 +186,22 @@
     name: apache2
     state: started
     enabled: yes
+
+- name: Flush handlers to restart Apache
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Apache to be fully ready
+  ansible.builtin.wait_for:
+    port: 80
+    delay: 2
+    timeout: 30
+
+- name: Verify Laravel application is accessible
+  ansible.builtin.uri:
+    url: http://localhost
+    status_code: 200
+    timeout: 10
+  register: app_check
+  retries: 3
+  delay: 2
+  until: app_check.status == 200

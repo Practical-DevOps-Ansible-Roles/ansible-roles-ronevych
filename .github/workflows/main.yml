@@ -23,7 +23,7 @@ jobs:
       DB_HOST: localhost
       DB_NAME: lrv
       DB_USER: lrv
-      DB_PASS: ${{ secrets.GITHUB_TOKEN }}
+      DB_PASS: lrv_password_2026
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -62,6 +62,18 @@ jobs:
           localhost
           EOF
           ansible-playbook -i ./hosts main.yml -e "db_host=$DB_HOST db_name=$DB_NAME db_user=$DB_USER db_pass=$DB_PASS" -c local
+      - name: Verify database setup
+        run: |
+          echo "Verifying PostgreSQL database setup..."
+          sudo apt-get install -y postgresql-client
+          PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -c "SELECT version();" || {
+            echo "ERROR: Failed to connect to PostgreSQL database"
+            echo "DB_HOST: $DB_HOST"
+            echo "DB_NAME: $DB_NAME"
+            echo "DB_USER: $DB_USER"
+            exit 1
+          }
+          echo "Database connection successful!"
       - name: Debug application status
         if: always()
         run: |
@@ -86,7 +98,13 @@ jobs:
       - name: Test if application uses PostgreSQL
         run: |
           sudo apt-get install postgresql-client -y
-          PGPASSWORD=$DB_PASS psql -h $DB_HOST -U $DB_USER -d $DB_NAME -c '\d' | grep users
+          echo "Testing PostgreSQL connection..."
+          PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -c "SELECT version();" || {
+            echo "Failed to connect to PostgreSQL"
+            exit 1
+          }
+          echo "Checking for users table..."
+          PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -c '\d' | grep users
       - name: Final Step
         env:
           GH_TOKEN: ${{ steps.generate-token.outputs.token }}
